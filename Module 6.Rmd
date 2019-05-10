@@ -1,0 +1,395 @@
+---
+title: "Visualisation avancée dans R avec `grid`"
+subtitle: "Module 6 : `Grobs` - Manipulation d'objets graphiques"
+author: "Marc-André Lemay"
+date: '2019-05-14'
+output: 
+  beamer_presentation:
+    theme: "default"
+    color: "seagull"
+header-includes:
+- \usepackage{caption}
+- \usepackage{courier}
+- \usepackage{booktabs}
+- \usepackage{longtable}
+- \usepackage{array}
+- \usepackage{multirow}
+- \usepackage{wrapfig}
+- \usepackage{float}
+- \usepackage{colortbl}
+- \usepackage{pdflscape}
+- \usepackage{tabu}
+- \usepackage{threeparttable}
+- \usepackage{threeparttablex}
+- \usepackage[normalem]{ulem}
+- \usepackage{makecell}
+- \usepackage{xcolor}
+- \captionsetup[figure]{labelformat=empty}
+---
+
+```{r, include=FALSE}
+library(grid)
+library(kableExtra)
+library(knitr)
+```
+
+```{r, include = FALSE}
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", paste0("\\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+```
+
+```{r, include = FALSE}
+scatterplot <- function(x, y, abline = FALSE, xlab = "x", ylab = "y",
+                        main = "", col = "black", fontsize = 12, 
+                        margins = c(5, 4, 4, 2)) {
+  # Préparation et projection des viewports
+  pushViewport(viewport(gp = gpar(fontsize = fontsize), name = "fontsize"))
+  pushViewport(plotViewport(name = "plot", margins = margins))
+  pushViewport(dataViewport(xData = x, yData = y, name = "data"))
+  # Ajout des points et optionnellement d'une droite de tendance
+  grid.points(x, y, gp = gpar(col = col))
+  if(abline) {
+    line_df <- data.frame(x = x, y = y)
+    lmodel <- lm(y ~ x, data = line_df)
+    pushViewport(viewport(clip = "on", xscale = current.viewport()$xscale,
+                          yscale = current.viewport()$yscale, name = "clip"))
+    grid.abline(intercept = coef(lmodel)[1], slope = coef(lmodel)[2],
+                gp = gpar(lty = 2)); upViewport()
+  }
+  # Ajout des annotations
+  grid.rect(); grid.xaxis(); grid.yaxis()
+  grid.text(xlab, y = unit(-3, "lines"))
+  grid.text(ylab, x = unit(-3, "lines"), rot = 90)
+  grid.text(main, y = unit(1, "npc") + unit(2, "lines"))
+  upViewport(3)
+  return(invisible(NULL))
+}
+
+grid_boxplot <- function(x, xfactor, fill = "white", fontsize = 24,
+                         xlab = "x", ylab = "y", main = "",
+                         margins = c(5.1, 4.1, 4.1, 2.1)) {
+  n <- nlevels(xfactor) # Nombre de facteurs, et donc de boîtes à tracer
+  xData <- tapply(x, xfactor, boxplot.stats) # Calcul des statistiques
+  # Préparation et projection des viewports
+  vp1 <- viewport(gp = gpar(fontsize = fontsize), name = "fontsize")
+  vp2 <- plotViewport(name = "plot", margins = margins)
+  vp3 <- dataViewport(yData = x, xscale = c(0.5, n + 0.5), name = "data")
+  vp4 <- viewport(layout = grid.layout(1, n), name = "layout")
+  pushViewport(vpStack(vp1, vp2, vp3, vp4))
+  
+  for(i in 1:n) { # On itère sur chacun des niveaux du facteur
+  	istats <- xData[[i]][["stats"]]; iout <- xData[[i]][["out"]]
+  	pushViewport(viewport(layout.pos.col = i, yscale = vp3$yscale, name = names(xData)[i]))
+    grid.lines(x = unit(c(0.5, 0.5), "npc"), # Ligne min-max
+               y = unit(c(istats[1], istats[5]), "native"))
+    grid.rect(y = unit(istats[2], "native"), # Boîte
+              height = unit(istats[4] - istats[2], "native"),
+              just = c("centre", "bottom"), width = unit(0.5, "npc"),
+              gp = gpar(fill = fill))
+    grid.lines(x = unit(c(0.25, 0.75), "npc"), # Ligne médiane
+               y = unit(rep(istats[3], 2), "native"))
+	# Outliers s'il y en a
+	if(length(iout)) grid.points(x = unit(rep(0.5, length(iout)), "npc"), y = iout)
+	upViewport()
+  }
+  # Annotation du graphique
+  upViewport(); grid.rect(); grid.yaxis(); grid.xaxis(1:n, names(xData))
+  grid.text(xlab, y = unit(-3, "lines"))
+  grid.text(ylab, x = unit(-3, "lines"), rot = 90)
+  grid.text(main, y = unit(1, "npc") + unit(2, "lines"))
+  upViewport(3); invisible(xData)
+}
+```
+
+# Qu'est-ce qu'un `grob`?
+
+* Les fonctions de type `grid.*()` que nous avons vues jusqu'à maintenant dessinent directement sur la fenêtre graphique.
+* `grid` fournit également un ensemble de fonctions de type `*Grob()` qui permettent de manipuler des objets de façon virtuelle, c'est-à-dire sans qu'ils soient représentés graphiquement.
+* Ces objets sont appelés `grobs` (pour *graphical object*) dans le langage de `grid`.
+* Toutes les formes présentes dans une fenêtre graphique sont énumérées dans une liste (la *display list*) qui permet de les manipuler et les éditer comme objets graphiques.
+
+# La *display list* et `grid.edit()`
+
+```{r, size = "tiny", fig.align = "center", out.width = '25%', fig.asp = 1, fig.show = "hold"}
+grid.newpage(); grid.rect()
+# Commençons par tracer un cercle de rayon 0.2 npc et une ligne "par défaut"
+grid.circle(r = 0.2); grid.lines()
+# grid garde une liste des objets que nous avons affichés jusqu'à maintenant
+(gnames <- getNames()); # Il y en a trois: un rectangle, un cercle et une ligne
+# Leurs noms nous permettent d'y accéder avec grid.edit() pour les modifier
+# grid.edit() prend leur nom comme premier argument, puis n'importe quel argument
+# valide pour ce type d'objet graphique pour signaler l'édition à effectuer
+grid.edit(gnames[1], gp = gpar(col = "red"))
+grid.edit(gnames[2], x = unit(0.2, "npc"), gp = gpar(fill = "blue"))
+grid.edit(gnames[3], vp = viewport(x = 1, y = 1, width = 0.2, 
+                                   height = 0.2, just = c("right", "top")))
+```
+
+# Noms des grobs
+```{r, size = "tiny", fig.align = "center", out.width = '25%', fig.asp = 1, fig.show = "hold"}
+grid.newpage(); grid.rect()
+# On peut aussi spécifier le nom d'un objet graphique de façon explicite
+grid.circle(name = "cercleA")
+# On peut ensuite utiliser ce nom pour éditer l'objet graphique
+grid.edit("cercleA", gp = gpar(lty = "19", col = "blue", fill = "forestgreen"))
+grid.edit("cercleA", r = unit(0.1, "npc"))
+# La fonction grid.remove() permet d'enlever un objet graphique entièrement
+grid.remove("cercleA")
+```
+
+# Utilisation avancée de `grid.edit()`
+
+```{r, size = "tiny", fig.align = "center", out.width = '25%', fig.asp = 1, fig.show = "hold"}
+grid.newpage(); grid.rect()
+# Commençons par créer dix cercles alignés au milieu de la page
+# Leurs noms alternent entre une lettre et un chiffre
+cnames <- letters[1:10]
+cnames[1:5 * 2] <- as.character(1:5) # cnames = c(a, 1, b, 2, c, 3, d, 4, e, 5)
+# La boucle trace chacun des cercles avec un nom différent
+for(i in 1:10) {
+	grid.circle(x = 0.1 * i - 0.05, r = 0.05, name = paste0("cercle", cnames[i]))
+}
+# L'argument "grep" de grid.edit permet de traiter le nom comme une expression régulière
+grid.edit("cercle[a-z]", grep = TRUE, gp = gpar(fill = "blue"))
+# Seulement le premier élément a été modifié. L'argument "global" permet d'y remédier
+grid.edit("cercle[a-z]", grep = TRUE, global = TRUE, gp = gpar(fill = "red"))
+# La fonction grid.gedit() est comme grid.edit() avec avec global et grep = TRUE
+grid.gedit("cercle[0-9]", gp = gpar(fill = "goldenrod"))
+```
+
+# Manipulation d'objets non affichés
+```{r, size = "tiny", fig.align = "center", out.width = '45%', fig.asp = 1}
+# grid permet aussi de créer des objets graphiques avec les fonctions *Grob()
+# chaque fonction grid.*() a sont équivalent *Grob() pour créer et manipuler des objets
+cercle <- circleGrob() # Un cercle avec paramètres par défaut
+# editGrob() permet d'éditer un grob et renvoie le grob modifié
+cercle <- editGrob(cercle, x = unit(0.1, "npc"), r = unit(0.1, "npc"), 
+                   gp = gpar(col = "green", fill = "blue"))
+# On peut aussi spécifier les paramètres des grobs lors de leur création
+rect1 <- rectGrob(width = unit(1, "in"), height = unit(3, "in"), gp = gpar(lwd = 10))
+textg <- textGrob("Voici un objet de type texte", gp = gpar(fontsize = 32))
+rect2 <- rectGrob()
+# La fonction grid.draw() permet de tracer les objets, et gList() de les regrouper
+grid.draw(gList(cercle, rect1, rect2, textg))
+```
+
+# Principales fonctions `*Grob()` disponibles dans `grid`[^1]
+
+```{r, echo = FALSE}
+grob_table <- data.frame(
+	"Fonction" = paste0("\\texttt{",
+														c("moveToGrob()", "lineToGrob()",
+															"linesGrob()", "polylineGrob()",
+															"segmentsGrob()", "xsplineGrob()",
+															"rectGrob()", "roundrectGrob()",
+															"circleGrob()", "polygonGrob()",
+															"pathGrob()", "textGrob()", "rasterGrob()",
+															"curveGrob()", "pointsGrob()",
+															"xaxisGrob()", "yaxisGrob()"),
+														"}"),
+	"Description" = c("Définir l'emplacement actuel",
+										"Ligne de l'emplacement actuel à un nouvel emplacement",
+										"Une seule ligne passant par plusieurs points",
+										"Plusieurs lignes passant par plusieurs points",
+										"Lignes joignant des paires de points",
+										"Courbe relative à des points de contrôle",
+										"Rectangles",
+										"Rectangles à coins arrondis",
+										"Cercles",
+										"Polygones",
+										"Un seul polygone constitué de plusieurs trajectoires",
+										"Texte",
+										"Image bitmap",
+										"Courbe entre deux points",
+										"Symboles",
+										"Axe en x",
+										"Axe en y"))
+
+kable(grob_table, "latex", booktabs = TRUE, 
+			escape = FALSE, linesep = "") %>%
+	kable_styling(latex_options = "scale_down") %>% row_spec(0, bold = TRUE)
+```
+
+[^1]: Tableau librement traduit de Murrell (2011)
+
+# Fonctions permettant de manipuler des objets graphiques[^2]
+
+* Les fonctions `grid.*()` acceptent le nom d'un `grob` sur la *display list* et le modifient ou accèdent à ce `grob`.
+* Les fonctions `*Grob()` acceptent un objet de type `grob` (donc une variable) comme premier argument et retournent un `grob` lorsqu'elles sont évaluées, sans produire d'*output* graphique.
+* Le rôle de certaines de ces fonctions deviendra plus clair au chapitre suivant portant sur les `gTree`.
+
+```{r, echo = FALSE}
+edit_table <- data.frame("grid" =
+												 	paste0("\\texttt{",
+												 				 c("grid.get()", "grid.edit()",
+												 				 	"grid.add()", "grid.remove()",
+												 				 	"grid.set()"),
+												 				 "}"),
+												 "Grob" = 
+												 	paste0("\\texttt{",
+												 				 c("getGrob()", "editGrob()",
+												 				 	"addGrob()", "removeGrob()",
+												 				 	"setGrob()"),
+												 				 "}"),
+												 "Description" = 
+												 	c("Retourne une copie d'un ou plusieurs \\texttt{grobs}",
+												 		"Modifie un ou plusieurs \\text{grobs}",
+												 		"Ajoute un \\texttt{grob} à un ou plusieurs \\texttt{grobs}",
+												 		"Supprime un ou plusieurs \\texttt{grobs}",
+												 		"Remplace un ou plusieurs \\texttt{grobs}"))
+
+kable(edit_table, "latex", booktabs = TRUE, 
+			escape = FALSE, linesep = "") %>%
+	kable_styling(latex_options = "scale_down") %>% row_spec(0, bold = TRUE)
+```
+
+[^2]: Tableau librement traduit de Murrell (2011)
+
+# Les unités basées sur les `grobs`
+
+```{r, size = "tiny", fig.align = "center", out.width = '35%', fig.asp = 1}
+grid.newpage(); grid.rect()
+# Commençons par créer un cercle de r = 0.2 npc qui ira à droite du viewport
+cercle <- circleGrob(r = unit(0.2, "npc"), x = unit(0.7, "npc"))
+# Nous allons positionner un carré de façon à ce qu'il soit directement
+#  à gauche de de cercle et qu ses côtés fassent le diamètre du cercle.
+#  Les unités grobwidth et grobheight nous donnent la largeur et la hauteur d'un grob
+rw <- unit(1, "grobwidth",  data = cercle)
+rh <- unit(1, "grobheight", data = cercle)
+# Les fonctions grobX et grobY nous permettent d'obtenir les positions en x et
+#  en y, respectivement, de la bordure d'un grob. Il faut imaginer une ligne
+#  partant du centre du grob et se dirigeant avec un angle theta vers la 
+#  bordure du grob.
+rx <- grobX(cercle, theta = "west") # Peut aussi être spécifié en degrés
+ry <- grobY(cercle, theta = "south")
+# Maintenant on trace le rectangle avec les dimensions générées
+grid.rect(x = rx, y = ry, width = rw, height = rh, just = c("right", "bottom"))
+# Et le cercle qui n'était jusqu'à maintenant que virtuel
+grid.draw(cercle)
+```
+
+# Explorer la *display list* avec `grid.ls()`
+
+```{r, size = "tiny", fig.align = "center", out.width = '35%', fig.asp = 1, fig.show = "hold"}
+# Utilisons notre fonction scatterplot() du module précédent
+scatterplot(mtcars$hp, mtcars$mpg, abline = TRUE, col = "blue",
+            xlab = "Nombre de chevaux-vapeur", ylab = "Miles par gallon",
+            main = "Miles par gallon selon le\n nombre de chevaux-vapeur",
+            fontsize = 24)
+# La fonction grid.ls() nous permet de voir tous les grobs sur la display
+# list. Avec l'option viewport = TRUE, on verrait aussi les viewports
+grid.ls()
+```
+
+# Exercices
+
+* **Exercice 1** Reproduisez la figure suivante en créant et manipulant des `grobs` et en ne les affichant qu'à la fin avec `grid.draw()` et `gList()`.
+
+```{r, size = "tiny", fig.align = "center", out.width = '60%', fig.asp = 1, echo = FALSE}
+# On crée un texte quelconque
+tg <- textGrob("fontsize = 24, lwd = 2, lty = 2", gp = gpar(fontsize = 24))
+# On crée la boîte qui contient la figure
+rg1 <- rectGrob()
+# On crée une boîte pour entourer le texte
+rg2 <- rectGrob(width = grobWidth(tg), #raccourci pour unit(1, "grobwidth", tg),
+								height = grobHeight(tg), gp = gpar(lwd = 4, lty = 2))
+# On obtient la limite inférieure de la boîte rg2
+boxpos <- convertY(grobY(rg2, theta = "south"), "npc", valueOnly = TRUE)
+# Cette valeur est utilisée pour déterminer le rayon du cercle et sa position
+rayon <- unit(boxpos / 2, "npc")
+# On veut tracer un cercle à la moitié de la distance entre le bas et la boîte
+cg <- circleGrob(y = rayon, r = rayon, gp = gpar(col = "red"))
+grid.draw(gList(tg, rg1, rg2, cg))
+```
+
+# Exercices
+
+* **Exercice 2** Le code suivant génère un objet appelé `"rects"` qui dispose des rectangles sur une grille de 8x8. Utilisez un seul appel à la fonction `grid.edit()` pour générer un patron d'échiquier à partir de cet objet.
+
+```{r, size = "tiny", fig.align = "center", out.width = '40%', fig.asp = 1}
+# On projette un viewport avec un système "native" approprié
+pushViewport(viewport(xscale = c(0.5, 8.5), yscale = c(0.5, 8.5)))
+# On dessine des rectangles sur une grille de 8x8
+grid.rect(x = rep(1:8, 8), y = rep(1:8, each = 8), width = 1, height = 1,
+          default.units = "native", name = "rects")
+```
+
+# Exercices
+
+* **Exercice 3** La fonction `grid_boxplot()` que nous avons créée au module 5 ne permet pas à l'utilisateur de contrôler le type de symbole à l'aide d'un argument `pch`. Utilisez plutôt `grid.edit()` pour changer les symboles des points en triangles.
+
+```{r, size = "tiny", fig.align = "center", out.width = '45%', fig.asp = 1}
+grid_boxplot(InsectSprays$count, InsectSprays$spray, fill = "indianred",
+             xlab = "Insecticide", ylab = "Décompte d'insectes",
+             main = "Effet de différents insecticides", fontsize = 14)
+```
+
+# Exercices
+
+* **Exercice 4** Obtenez une copie du rectangle bleu généré par le code suivant à l'aide de `grid.get()` et utilisez cette copie pour en placer une version `"orange"` dans le coin inférieur gauche.
+
+```{r, size = "tiny", fig.align = "center", out.width = '45%', fig.asp = 1}
+grid.newpage(); grid.rect()
+# On trace un rectangle bleu au milieu de la fenêtre graphique
+grid.rect(width = 0.4, height = 0.3, g = gpar(fill = "blue"), name = "rectA")
+```
+
+# Solution de l'exercice 1
+
+```{r, size = "tiny", fig.align = "center", out.width = '40%', fig.asp = 1}
+# On crée un objet texte indiquant les paramètres graphiques
+tg <- textGrob("fontsize = 24, lwd = 2, lty = 2", gp = gpar(fontsize = 24))
+# On crée la boîte qui contient la figure
+rg1 <- rectGrob()
+# On crée une boîte pour entourer le texte
+rg2 <- rectGrob(width = grobWidth(tg), #raccourci pour unit(1, "grobwidth", tg),
+                height = grobHeight(tg), gp = gpar(lwd = 4, lty = 2))
+# On obtient la limite inférieure de la boîte rg2
+boxpos <- convertY(grobY(rg2, theta = "south"), "npc", valueOnly = TRUE)
+# Cette valeur est utilisée pour déterminer le rayon du cercle et sa position
+rayon <- unit(boxpos / 2, "npc")
+# On veut tracer un cercle à la moitié de la distance entre le bas et la boîte
+cg <- circleGrob(y = rayon, r = rayon, gp = gpar(col = "red"))
+grid.draw(gList(tg, rg1, rg2, cg))
+```
+
+# Solution de l'exercice 2
+```{r, size = "tiny", fig.align = "center", out.width = '40%', fig.asp = 1, fig.show = "hold"}
+# On projette un viewport avec un système "native" approprié
+pushViewport(viewport(xscale = c(0.5, 8.5), yscale = c(0.5, 8.5)))
+# On dessine des rectangles sur une grille de 8x8
+grid.rect(x = rep(1:8, 8), y = rep(1:8, each = 8), width = 1, height = 1,
+          default.units = "native", name = "rects")
+# Le vecteur de couleurs généré pour fill reproduit un patron d'échiquier
+grid.edit("rects", gp = gpar(fill = ifelse(rep(c(rep(c(0, 1), 4),
+                                                 rep(c(1, 0), 4)),
+                                                 4), "white", "black")))
+```
+
+# Solution de l'exercice 3
+```{r, size = "tiny", fig.align = "center", out.width = '50%', fig.asp = 1, fig.show = "hold"}
+grid_boxplot(InsectSprays$count, InsectSprays$spray, fill = "indianred",
+             xlab = "Insecticide", ylab = "Décompte d'insectes",
+             main = "Effet de différents insecticides", fontsize = 14)
+# Le patron grep a été trouvé en inspectant la display list avec grid.ls()
+grid.gedit("GRID.points.[0-9][0-9]", pch = 2)
+```
+
+# Solution de l'exercice 4
+
+```{r, size = "tiny", fig.align = "center", out.width = '50%', fig.asp = 1}
+grid.newpage(); grid.rect()
+# On trace un rectangle bleu au milieu de la fenêtre graphique
+grid.rect(width = 0.4, height = 0.3, g = gpar(fill = "blue"), name = "rectA")
+# On en obtient une copie à l'aide de grid.get()
+rg <- grid.get("rectA")
+# On la modifie
+rg <- editGrob(rg, x = unit(0, "npc"), y = unit(0, "npc"), 
+               just = c("left", "bottom"), gp = gpar(fill = "orange"), 
+               name = "rectB")
+# On la dessine
+grid.draw(rg)
+```

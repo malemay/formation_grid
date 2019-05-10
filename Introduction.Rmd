@@ -1,0 +1,168 @@
+---
+title: "Visualisation avancée dans R avec `grid`"
+subtitle: "Introduction"
+author: "Marc-André Lemay"
+date: '2019-05-14'
+output: 
+  beamer_presentation:
+    theme: "default"
+    color: "seagull"
+header-includes:
+- \usepackage{caption}
+- \captionsetup[figure]{labelformat=empty}
+---
+
+```{r, include=FALSE}
+library(grid)
+library(kableExtra)
+library(knitr)
+library(ggplot2)
+```
+
+```{r, include = FALSE}
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", paste0("\\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+```
+
+
+# Présentation de l'animateur
+
+* Baccalauréat en biologie (2014 - Université Laval)
+* Maîtrise en biologie (2016 - Université Laval)
+    * Directeur de recherche : Stéphane Boudreau
+    * Modélisation spatiale des changements de végétation
+* Doctorat en biologie végétale (en cours - Université Laval)
+    * Directeur de recherche : François Belzile
+    * Analyse de la variation structurale chez le soya canadien
+    
+* Adresse courriel : marc-andre.lemay.2@ulaval.ca
+* GitHub : github.com/malemay
+
+
+# Fonctionnement de l'atelier
+
+* L'atelier est divisé en 9 modules d'une durée moyenne de 30 à 45 minutes chacun.
+    * Chaque module consacre 30-50% du temps aux notions théoriques et 50-70% à la pratique.
+    * Le volume d'exercices excède le temps disponible pour l'atelier. L'objectif n'est pas de les compléter tous en une seule journée.
+* La dernière heure sera dédiée à de la programmation libre et des présentations sur une base volontaire.
+* Cette présentation a été rédigée entièrement en R Markdown. Le code est disponible sur [ma page GitHub](https://github.com/malemay/formation_grid).
+* Certains termes ont été traduits librement de l'anglais, alors que pour d'autres, le terme anglais sera utilisé (e.g. `viewport`, `grob`).
+
+
+# Plan de l'atelier
+
+* Module 1 : Introduction aux `viewports`
+* Module 2 : Formes et paramètres graphiques
+* Module 3 : Unités et systèmes de coordonnées
+* Module 4 : `Viewports` - notions avancées et navigation
+* Module 5 : Graphiques statistiques avec `grid`
+* Module 6 : `Grobs` - Manipulation d'objets graphiques
+* Module 7 : Objets graphiques complexes (`gTree`)
+* Module 8 : Utilisation combinée de `grid` et `ggplot2`
+* Module 9 : Création de fonctions graphiques avec `grid` et notes de clôture
+
+
+# Principaux packages graphiques de `R`[^1] :
+
+* `graphics`
+    * Système graphique développé par Ross Ihaka (1997)
+    * Les fonctions `plot()`, `boxplot()` et `hist()` en font partie
+* `grid`
+    * Système graphique développé par Paul Murrell (2001)
+* `lattice`
+    * Package graphique développé par Deepayan Sarkar (2001)
+    * Implémentation des graphiques de type *Trellis* proposés par Bill Cleveland (1993)
+    * Basé sur le système `grid`
+* `ggplot2`
+    * Package graphique développé par Hadley Wickham (2006 sous le nom `ggplot`)
+    * Implémentation du concept de *Grammaire des graphiques* de Leland Wilkinson (2005)
+    * Basé sur le système `grid`
+
+[^1]: Les dates indiquent la plus vieille version disponible sur CRAN.
+
+
+# Pourquoi choisir un package graphique en particulier?
+
+* `graphics`
+    * Probablement le système le plus intuitif et le plus facile à utiliser
+    * Les fonctions graphiques de nombreux packages sont basées sur ce système.
+* `ggplot2`
+    * Paradigme graphique extrêmement puissant (graphiques complexes en peu de lignes de code)
+    * Grande qualité esthétique des graphiques
+* `lattice`
+    * Visualisation efficace de données multivariées
+    * Quelques fonctions intéressantes pour la visualisation en 3D
+* `grid`
+    * Pour développer de nouvelles fonctions graphiques arbitrairement complexes
+    * Pour créer *la* figure parfaite pour votre publication
+    * Pour s'affranchir des contraintes des autres packages graphiques
+
+
+# Qu'est-ce que `grid`?
+
+* `grid` est un package fournissant des fonctions de bas niveau pour la création de graphiques et figures dans `R`.
+    * Désavantage : pas de fonctions graphiques « toutes faites »
+    * Avantage : liberté et flexibilité inégalées
+* Paradigme de `grid` en une phrase:
+    * L'ajout (*drawing*) de formes de base et d'objets graphiques prend place dans des fenêtres graphiques (`viewports`) en fonction d'unités et de systèmes de coordonnées spécifiés par l'utilisateur.
+* `grid` suit à peu près le même modèle de « crayon et papier » (*pen and paper model*) que `graphics`.
+    * Avec la gomme à effacer, la règle et le papier quadrillé en plus
+* `grid` est fourni avec l'installation de base de `R`. Pour l'utiliser, il faut simplement le charger avec `library(grid)`.
+    
+---
+
+Arranger différents graphiques de `ggplot2` avec `grid`
+
+<center>
+
+![](intro_fig1.pdf)
+
+</center>
+
+---
+
+Visualisation d'alignements de séquences d'ADN avec `grid`
+
+<center>
+
+![](intro_fig2.pdf)
+
+</center>
+
+---
+
+Visualisation de données génomiques complexes avec `grid`
+
+<center>
+
+![](intro_fig3.pdf)
+
+</center>
+
+---
+
+Génération de cartes avec `grid` (Figure 8.18 de Murrell 2011)
+
+<center>
+
+![](intro_fig4.pdf)
+
+</center>
+
+# Références
+
+* Cleveland, William S. *Visualizing Data*. Hobart Press, 1993.
+* Murrell, Paul. *R Graphics*. Chapman & Hall/CRC, 2005.
+* Murrell, Paul. *R Graphics, Second Edition*. Chapman & Hall/CRC, 2011.
+* Sarkar, Deepayan. *Lattice: Multivariate Data Visualisation with R*. Springer, 2008.
+* Wickham, Hadley. *ggplot2: Elegant Graphics for Data Analysis*. Springer, 2016.
+* Wilkinson, Leland. *The Grammar of Graphics, Second Edition*. Springer, 2005.
+
+# Spécifications techniques
+
+```{r, size = "tiny"}
+sessionInfo() # Informations sur le système utilisé pour construire les modules
+```

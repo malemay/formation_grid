@@ -1,0 +1,137 @@
+---
+title: "Visualisation avancée dans R avec `grid`"
+subtitle: "Module 1 : Introduction aux `viewports`"
+author: "Marc-André Lemay"
+date: '2019-05-14'
+output: 
+  beamer_presentation:
+    theme: "default"
+    color: "seagull"
+header-includes:
+- \usepackage{caption}
+- \captionsetup[figure]{labelformat=empty}
+---
+
+```{r, include=FALSE}
+library(grid)
+```
+
+```{r, include = FALSE}
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", paste0("\\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+```
+
+# Qu'est-ce qu'un `viewport`?
+
+* Terme utilisé par `grid` pour parler de fenêtres graphiques
+* Chaque `viewport` définit une région rectangulaire sur le dispositif graphique (*device*).
+* Le `viewport` actif à un instant donné (il y en a toujours un) s'appelle le « `viewport` courant » (*current viewport*).
+* L'ajout d'éléments graphiques se fait par rapport au `viewport` courant.
+* Un `viewport` doit être projeté (*pushed*) pour être utilisé.
+
+# Notre premier `viewport`
+
+\setlength{\parskip}{0pt}
+
+```{r, size = "tiny", out.width = '45%', fig.align = "center", fig.asp = 1}
+# On s'assure que la page est vide et on l'entoure d'un rectangle
+grid.newpage(); grid.rect()
+# Le premier viewport est la racine (ROOT)
+current.viewport()
+# On crée un nouveau viewport qui fait la moitié de la hauteur et de la largeur de ROOT
+# Celui-ci se retrouve au centre par défaut
+vp1 <- viewport(width = 0.5, height = 0.5)
+# La fonction showViewport() permet de le visualiser
+showViewport(vp1)
+```
+
+# Dessiner dans un `viewport`
+
+```{r, size = "tiny", out.width = '50%', fig.align = "center", fig.asp = 1}
+grid.newpage() # Permet d'effacer le contenu de la page pour dessiner à nouveau
+# La fonction grid.rect() permet de dessiner un rectangle
+grid.rect() # Celui-ci est tracé autour du viewport ROOT
+# Le viewport vp1 devient le viewport courant lorsque projeté avec pushViewport()
+pushViewport(vp1); current.viewport()
+grid.rect() # Ce rectangle-ci est tracé autour de vp1
+```
+
+# Dessiner dans un viewport sans `pushViewport()`
+```{r, size = "tiny", out.width = '50%', fig.align = "center", fig.asp = 1, fig.show = "hold"}
+grid.newpage(); grid.rect()
+# Créons un nouveau viewport plus petit, situé dans le coin inférieur gauche
+vp2 <- viewport(x = 0.15, y = 0.15, width = 0.2, height = 0.2)
+# On peut spécifier un viewport comme argument à grid.rect() pour éviter de projeter le viewport
+grid.rect(vp = vp1); grid.rect(vp = vp2); current.viewport() # Encore dans ROOT
+```
+
+# Naviguer entre `viewports`
+
+```{r, size = "tiny", out.width = '50%', fig.align = "center", fig.asp = 1}
+grid.newpage(); grid.rect()
+# On peut aussi donner des noms à nos viewports
+vp1 <- viewport(width = 0.5, height = 0.5, name = "A")
+vp2 <- viewport(x = 0.15, y = 0.15, width = 0.2, height = 0.2, name = "B")
+# Maintenant, on projette chacun des viewports. upViewport() permet de revenir au parent
+pushViewport(vp1); upViewport(); pushViewport(vp2); upViewport() # Nous sommes dans ROOT
+# Les noms nous permettent de tracer directement dedans
+grid.rect(vp = "A"); grid.text(label = "Viewport A", vp = "A")
+# Ou d'y naviguer avant d'y dessiner quelque chose
+downViewport(name = "B"); grid.rect(); grid.text(label = "Viewport B") # Nous sommes dans B
+```
+
+# Projection de `viewports` en série
+
+```{r, size = "tiny", out.width = '50%', fig.align = "center", fig.asp = 1, fig.show = "hold"}
+grid.newpage(); grid.rect()
+# L'objet retourné par la fonction viewport() n'est qu'une description d'une région
+#   graphique. Il n'existe que lorsque projeté, et un même viewport peut être 
+#   projeté à plusieurs reprises
+vp1 <- viewport(width = 0.8, height = 0.8)
+# Un viewport est toujours projeté par rapport au viewport courant.
+# Cela permet de projeter le même viewport en série de la façon suivante:
+for(i in 1:15) {pushViewport(vp1); grid.rect()}
+# Chaque viewport fait 0.8^2 fois la taille de son parent
+```
+
+#Exercices
+
+* **Exercice 1** : Créez quelques `viewports` en modifiant les arguments `x`, `y`, `width` et `height`. Vérifiez le résultat obtenu à l'aide de la fonction `showViewport()`. Expérimentez aussi avec la fonction `grid.show.viewport()`. En quoi le résultat est-il différent?
+
+* **Exercice 2** : Reproduisez la figure de la diapositive suivante. Placez les mots "Bonjour" et "monde!" au tiers et aux deux tiers de la diagonale, respectivement. 
+
+# Figure de l'exercice 2
+
+```{r, fig.align = "center", out.width = '70%', fig.asp = 1, echo = FALSE}
+# Nettoyage de la page
+grid.newpage(); grid.rect()
+# Création des deux viewports
+vp1 <- viewport(0.333, 0.333); vp2 <- viewport(0.666, 0.666)
+# Le texte est tracé dans chacun des viewports
+grid.text("Bonjour", vp = vp1); grid.text("monde!", vp = vp2)
+```
+
+# Solution de l'exercice 1
+```{r, size = "tiny", fig.align = "center", out.width = '40%', fig.asp = 1, fig.keep = "high", fig.show = "hold"}
+# On crée un viewport quelconque
+vp1 <- viewport(x = 0.3, y = 0.6, width = 0.3, height = 0.3)
+# On l'affiche avec showViewport()
+grid.rect(); showViewport(vp1)
+# Puis avec grid.show.viewport()
+grid.show.viewport(vp1)
+```
+
+
+# Solution de l'exercice 2
+
+```{r, size = "tiny", fig.align = "center", out.width = '55%', fig.asp = 1}
+# Nettoyage de la page
+grid.newpage(); grid.rect()
+# Création des deux viewports
+vp1 <- viewport(0.333, 0.333); vp2 <- viewport(0.666, 0.666)
+# Le texte est tracé dans chacun des viewports
+grid.text("Bonjour", vp = vp1); grid.text("monde!", vp = vp2)
+```

@@ -1,0 +1,370 @@
+---
+title: "Visualisation avancée dans R avec `grid`"
+subtitle: "Module 4 : Viewports - Notions avancées et navigation"
+author: "Marc-André Lemay"
+date: '2019-05-14'
+output: 
+  beamer_presentation:
+    theme: "default"
+    color: "seagull"
+header-includes:
+- \usepackage{caption}
+- \usepackage{courier}
+- \usepackage{booktabs}
+- \usepackage{longtable}
+- \usepackage{array}
+- \usepackage{multirow}
+- \usepackage{wrapfig}
+- \usepackage{float}
+- \usepackage{colortbl}
+- \usepackage{pdflscape}
+- \usepackage{tabu}
+- \usepackage{threeparttable}
+- \usepackage{threeparttablex}
+- \usepackage[normalem]{ulem}
+- \usepackage{makecell}
+- \usepackage{xcolor}
+- \captionsetup[figure]{labelformat=empty}
+---
+
+```{r, include=FALSE}
+library(grid)
+library(kableExtra)
+library(knitr)
+```
+
+```{r, include = FALSE}
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", paste0("\\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+```
+
+# `Viewports` : notions avancées
+
+* `grid` fournit des outils permettant de créer des arborescences complexes de `viewports`
+* De nombreuses fonctions permettent d'interroger la structure de cette arboresence et de naviguer entre `viewports`
+* Les *layouts* permettent de créer des arrangements efficaces de `viewports` à des fins de visualisation de données.
+
+# Navigation dans les `viewports`
+
+\setlength{\parskip}{0pt}
+\setlength{\partopsep}{1pt}
+
+```{r, size = "tiny", fig.keep = "none"}
+# La fonction vpTree permet de créer des arrangements complexes de viewports
+tree1 <- vpTree(parent = viewport(name = "A"), 
+                children = vpList(viewport(name = "B"), viewport(name = "C")))
+# La projection d'un vpTree projette le parent d'abord et ses enfants ensuite
+grid.newpage(); pushViewport(tree1)
+current.viewport() # On se trouve dans le viewport C
+# La fonction current.vpPath() renvoie le chemin pour se rendre au viewport actuel
+current.vpPath()
+# La fonction current.vpTree() renvoie l'arborescence complète
+current.vpTree()
+# La fonction popViewport() agit comme upViewport(), mais supprime le viewport
+popViewport(); current.vpTree()
+# Retournons à la racine et utilisons downViewport() et vpPath() pour aller à B
+upViewport(); downViewport(vpPath("A", "B")); current.viewport()
+# On peut aussi utiliser seekViewport si le nom du viewport recherché est unique
+upViewport(2); seekViewport("B"); current.viewport()
+```
+
+# Projeter en série avec `vpStack()`
+
+```{r, size = "tiny", fig.align = "center", out.width = '40%', fig.asp = 1, fig.show = "hold", comment = NA}
+grid.newpage()
+# Commençons par diviser la fenêtre graphique en deux
+pushViewport(vp_gauche <- viewport(x = 0, width = 0.5, just = "left", name = "gauche"))
+grid.rect(gp = gpar(col = "blue", lwd = 3)); upViewport()
+pushViewport(vp_droite <- viewport(x = 0.5, width = 0.5, just = "left", name = "droite"))
+grid.rect(gp = gpar(col = "red", lwd = 3)); upViewport()
+# Nous allons projeter deux viewports en série avec vpStack() dans le viewport de gauche
+downViewport("gauche"); pushViewport(vpStack(vp_gauche, vp_droite))
+grid.rect(gp = gpar(lty = 2, lwd = 2))
+# Voyons de quoi a l'air l'arborescence
+current.vpTree()
+```
+
+# Projeter en parallèle avec `vpList()`
+
+```{r, size = "tiny", fig.align = "center", out.width = '35%', fig.asp = 1, fig.show = "hold", comment = NA}
+grid.newpage()
+# Les viewports vp_gauche et vp_droite sont définis à la diapo précédente
+# On trace un rectangle bleu entourant vp_gauche et un rouge entourant vp_droite
+pushViewport(vp_gauche)
+grid.rect(gp = gpar(col = "blue", lwd = 3)); upViewport()
+pushViewport(vp_droite)
+grid.rect(gp = gpar(col = "red", lwd = 3)) # On reste à droite 
+# On projette ensuite ces deux mêmes viewports en parallèle dans le viewport de droite
+pushViewport(vpList(vp_gauche, vp_droite)) # Cela nous laisse dans droite::droite
+# On trace maintenant des lignes dans chacun de ces viewports
+grid.lines(gp = gpar(col = "goldenrod", lwd = 2))
+# On doit revenir dans le viewport parent pour redescendre dans droite::gauche
+upViewport(); downViewport("gauche"); grid.lines(gp = gpar(lty = 2, lwd = 2))
+# Voyons de quoi a l'air l'arborescence
+current.vpTree()
+```
+
+# L'argument `clip` des `viewports`
+
+```{r, size = "tiny", fig.align = "center", out.width = '47%', fig.asp = 1}
+grid.newpage(); grid.rect()
+# L'argument clip détermine si le viewport permet de tracer hors de ses limites
+pushViewport(viewport(width = 0.6, height = 0.6, name = "A"))
+grid.rect(gp = gpar(lwd = 2, lty = 2))
+# Le viewport A hérite la valeur clip = "off" de son parent
+grid.circle(r = 0.6, gp = gpar(lwd = 30))
+# On crée maintenant un autre viewport avec clipping
+pushViewport(viewport(clip = "on", name = "B"))
+grid.circle(r = 0.6, gp = gpar(lwd = 15, col = "yellow"))
+# Un nouveau viewport hérite par défaut des caractéristiques de son parent
+pushViewport(viewport(name = "C"))
+grid.circle(r = 0.6, gp = gpar(lwd = 5, col = "red"))
+```
+
+# Layouts : utilisation simple
+
+```{r, size = "tiny", fig.align = "center", out.width = '40%', fig.asp = 1}
+grid.newpage(); grid.rect()
+# La fonction viewport comprend un argument "layout" qui accepte le résultat
+# d'un appel à la fonction grid.layout(). Le viewport créé ici est prêt à 
+# engendrer d'autres viewports sur une grille de 4 cellules par 4 cellules
+pushViewport(viewport(layout = grid.layout(nrow = 4, ncol = 4)))
+# Par exemple, on peut dessiner un carré noir dans la cellule (1,1) en haut à gauche
+pushViewport(viewport(layout.pos.row = 1, layout.pos.col = 1))
+grid.rect(gp = gpar(fill = "black")); upViewport()
+# Le fait de ne pas spécifier layout.pos.row (ou col) projette sur toutes les rangées
+pushViewport(viewport(layout.pos.col = 4))
+grid.rect(gp = gpar(fill = "blue")); upViewport()
+# On peut aussi spécifier un vecteur de rangées ou colonnes contiguës
+pushViewport(viewport(layout.pos.row = 3:4, layout.pos.col = 1:2))
+grid.rect(gp = gpar(fill = "red"))
+```
+
+# Layouts : spécification des unités
+
+```{r, size = "tiny", fig.align = "center", out.width = '35%', fig.asp = 1}
+grid.newpage(); grid.rect()
+# La fonction grid.layout() accepte des arguments widths et heights
+# Ceux-ci spécifient la largeur et la hauteur de chacune des colonnes
+layout1 <- grid.layout(2, 1, heights = unit(c(0.6, 0.4), "npc"))
+layout2 <- grid.layout(1, 2, widths = unit(c(0.2, 0.8), "npc"))
+# Nous allons nicher ces deux layouts aux positions (1,1) et (2,2) d'un layout 2x2
+pushViewport(viewport(layout = grid.layout(2, 2)))
+# On trace d'abord dans la case en haut à gauche
+pushViewport(viewport(layout.pos.row = 1, layout.pos.col = 1, layout = layout1))
+grid.rect(gp = gpar(col = "red"), vp = viewport(layout.pos.row = 1))
+grid.rect(gp = gpar(col = "red"), vp = viewport(layout.pos.row = 2))
+upViewport()
+# Ensuite dans celle en bas à droite
+pushViewport(viewport(layout.pos.row = 2, layout.pos.col = 2, layout = layout2))
+grid.rect(gp = gpar(col = "blue"), vp = viewport(layout.pos.col = 1))
+grid.rect(gp = gpar(col = "blue"), vp = viewport(layout.pos.col = 2))
+```
+
+# Layouts : l'unité spéciale `"null"`
+
+```{r, size = "tiny", fig.align = "center", out.width = '43%', fig.asp = 1}
+grid.newpage(); grid.rect()
+# L'unité "null" permet d'indiquer que les rangées ou colonnes visées
+# se partagent l'espace restant. Ici, nous allons créer un layout 3x3 pour lequel:
+# La 1e rangée mesure un pouce, et la 2e est 2 fois plus haute que la 3e
+# La 1e colonne mesure 2 lignes et les deux autres se partagent l'espace également
+layout1 <- grid.layout(nrow = 3, ncol = 3,
+                       heights = unit(c(1, 2, 1), c("in", "null", "null")),
+                       widths =  unit(c(2, 1, 1), c("lines", "null", "null")))
+# On projette un viewport ayant ce layout
+pushViewport(viewport(layout = layout1))
+# Dessinons des rectangles pour pouvoir visualiser
+for(i in 1:3) {
+	for(j in 1:3) grid.rect(vp = viewport(layout.pos.row = i, layout.pos.col = j))
+}
+```
+
+# Exercices
+
+* **Exercice 1** : Dessinez un échiquier (grille de 8x8 avec alternance de carrés noirs et blancs).
+* **Exercice 2** : Reproduisez la figure située sur la diapositive suivante.
+
+# Figure de l'exercice 2
+
+```{r, echo = FALSE, fig.align = "center", out.width = '75%', fig.asp = 1}
+grid.newpage(); grid.rect()
+# Ligne indiquant les dimensions
+grid.lines(x = c(0, 0.2), y = 0.5, arrow = arrow(angle = 30, ends = "both"))
+# Texte pour annoter et préciser
+grid.text("0.2 npc", x = 0.1, y = unit(0.5, "npc") + unit(1, "lines"),
+          gp = gpar(fontsize = 24))
+grid.text("r = 0.5 npc, lwd = 5, lty = 2, fontsize = 24", y = unit(1, "lines"),
+          gp = gpar(fontsize = 24))
+# On projette un premier viewport sans clipping pour le premier cercle
+pushViewport(viewport(width = 0.6, height = 0.6, gp = gpar(lwd = 5, lty = 2)))
+grid.rect()
+grid.circle(x = 1, y = 1, r = 0.5)
+# Les trois autres cercles sont tracés dans un viewport avec clipping
+pushViewport(viewport(clip = "on"))
+grid.circle(x = c(0, 0, 1), y = c(0, 1, 0), r = 0.5)
+```
+
+# Exercices
+
+* **Exercice 3** : Le vecteur `colors()` contient les noms de 657 couleurs valides dans `R`. Générez une grille des 144 premières couleurs de ce vecteur et inscrivez l'indice correspondant à cette couleur au milieu de chaque carré.
+* **Exercice 4** : Reproduisez la figure située sur la diapositive suivante.
+
+# Figure de l'exercice 4
+
+```{r, echo = FALSE, fig.align = "center", out.width = '75%', fig.asp = 1}
+grid.newpage(); grid.rect()
+# On crée d'abord un viewport contenant un layout de 2x2
+vp <- viewport(layout = grid.layout(2,2))
+
+for(i in 1:4) {
+	# Ce viewport est projeté à chacune des 4 itérations
+	pushViewport(vp)
+	# Les boucles j et k dessinent un rectangle dans chaque section du layout
+	for(j in 1:2) {
+		for(k in 1:2) grid.rect(vp = viewport(layout.pos.row = j, layout.pos.col = k))
+	}
+	# On se déplace ensuite dans la case supérieure gauche du layout
+	pushViewport(viewport(layout.pos.row = 1, layout.pos.col = 1))
+}
+```
+
+# Exercices
+
+* **Exercice 5** : (Avancé) Rédigez une fonction récursive qui permet d'explorer tous les `viewports` d'une arborescence à partir d'un `viewport` donné et qui renvoie un vecteur de chaînes de caractères contenant le chemin (le `current.vpPath()`) pour se rendre jusqu'à ce `viewport`. En résumé, on cherche à reproduire un comportement similaire à un appel à `pathListing(grid.ls(viewports = TRUE, grobs = FALSE))`.
+
+# Solution de l'exercice 1
+```{r, size = "tiny", fig.align = "center", out.width = '45%', fig.asp = 1}
+grid.newpage(); grid.rect()
+# On projette d'abord un viewport avec un layout de 8x8
+pushViewport(viewport(layout = grid.layout(8, 8)))
+# Les indices i se rapportent aux rangées, et j aux colonnes
+for(i in 1:8) {
+	cases_noires <- if(i %% 2 == 0) c(1, 3, 5, 7) else c(2, 4, 6, 8)
+	for(j in 1:8) {
+		if(j %in% cases_noires) {
+			grid.rect(gp = gpar(fill = "black"),
+                     vp = viewport(layout.pos.row = i, layout.pos.col = j))
+		}
+	}
+}
+```
+
+# Solution de l'exercice 2
+
+```{r, size = "tiny", fig.align = "center", out.width = '40%', fig.asp = 1}
+grid.newpage(); grid.rect()
+# Ajout d'une flèche à deux bouts indiquant les dimensions
+grid.lines(x = c(0, 0.2), y = 0.5, arrow = arrow(angle = 30, ends = "both"))
+# Texte pour annoter et préciser les paramètres graphiques
+grid.text("0.2 npc", x = 0.1, y = unit(0.5, "npc") + unit(1, "lines"),
+          gp = gpar(fontsize = 24))
+grid.text("r = 0.5 npc, lwd = 5, lty = 2, fontisize = 24", y = unit(1, "lines"),
+          gp = gpar(fontsize = 24))
+# On projette un premier viewport sans clipping pour le premier cercle
+pushViewport(viewport(width = 0.6, height = 0.6, gp = gpar(lwd = 5, lty = 2)))
+grid.rect()
+grid.circle(x = 1, y = 1, r = 0.5)
+# Les trois autres cercles sont tracés dans un viewport avec clipping
+pushViewport(viewport(clip = "on"))
+grid.circle(x = c(0, 0, 1), y = c(0, 1, 0), r = 0.5)
+```
+
+# Solution de l'exercice 3
+
+```{r, size = "tiny", fig.align = "center", out.width = '50%', fig.asp = 1}
+grid.newpage(); grid.rect()
+# Projection d'un viewport contenant un layout de 12x12
+pushViewport(viewport(layout = grid.layout(12, 12)))
+# Pour chaque indice, on projette un viewport et on trace à l'intérieur
+for(i in 1:144) {
+	pushViewport(viewport(layout.pos.row = ceiling(i / 12),
+                          layout.pos.col = ifelse(i %% 12 == 0, 12, i %% 12)))
+	grid.rect(gp = gpar(fill = colors()[i]))
+	grid.text(i, gp = gpar(fontsize = 16))
+	upViewport() # Ne pas oublier de sortir du viewport
+}
+```
+
+# Solution de l'exercice 4
+
+```{r, size = "tiny", fig.align = "center", out.width = '40%', fig.asp = 1}
+grid.newpage(); grid.rect()
+# On crée d'abord un viewport contenant un layout de 2x2
+vp <- viewport(layout = grid.layout(2, 2))
+
+for(i in 1:4) {
+	# Ce viewport est projeté à chacune des 4 itérations
+	pushViewport(vp)
+	# Les boucles j et k dessinent un rectangle dans chaque section du layout
+	for(j in 1:2) {
+		for(k in 1:2) grid.rect(vp = viewport(layout.pos.row = j, layout.pos.col = k))
+	}
+	# On se déplace ensuite dans la case supérieure gauche du layout
+	pushViewport(viewport(layout.pos.row = 1, layout.pos.col = 1))
+}
+```
+
+# Solution de l'exercice 5
+
+```{r, size = "tiny"}
+viewport_paths <- function(vp_name) {
+	# On 'descend' dans le viewport en question
+	# Pour l'appel initial de fonction, il n'y a pas de nom spécifié
+	if(!missing(vp_name)) downViewport(vp_name)
+	
+	# On extrait le vpTree à partir de celui-ci en descendant
+	vp_tree <- current.vpTree(all = FALSE)
+	
+	# Créer un vecteur pour stocker l'output
+	paths <- character()
+	
+	# Ce qu'on fait dépend de si c'est un vpTree ou un viewport "ordinaire"
+	if(inherits(vp_tree, "vpTree")) {
+		# On itère sur chacun des "enfants" (children) du vpTree
+		for(i in 1:length(vp_tree[[2]])) {
+			# Si c'est encore un vpTree, on examine le parent
+			if(inherits(vp_tree[[2]][[i]], "vpTree")) {
+				paths <- c(paths, viewport_paths(vp_tree[[2]][[i]][[1]]$name))
+			} else {
+				# Si ce n'est qu'un simple viewport, l'indexation est différente
+				paths <- c(paths, viewport_paths(vp_tree[[2]][[i]]$name))
+			}
+		}
+	}
+	
+	# On extrait le chemin complet pour se rendre à ce viewport à partir de ROOT
+	paths <- c(paths, as.character(current.vpPath()))
+	
+	# On remonte au viewport d'avant sauf si c'est celui à partir duquel
+	#  la fonction a été appelée
+	if(!missing(vp_name)) upViewport()
+	
+	# On renvoie le chemin trouvé pour ce viewport
+	paths
+}
+```
+
+# Exemple d'utilisation de la fonction `viewport_paths`
+
+```{r, size = "tiny", echo = TRUE, fig.keep = "none"}
+grid.newpage()
+# On projette deux viewports, A et B, un après l'autre
+pushViewport(viewport(name = "A"))
+pushViewport(viewport(name = "B"))
+upViewport(2)
+# Le viewport C est projeté en série 4 fois à partir de ROOT
+vpC <- viewport(name = "C")
+pushViewport(vpStack(vpC, vpC, vpC, vpC))
+# On projette un viewport contenant un layout 3x3 à partir de C
+pushViewport(viewport(layout = grid.layout(3, 3), name = "D"))
+# On projette un dernier viewport (non nommé) dans ce layout
+pushViewport(viewport(layout.pos.row = 3))
+# On remonte à la racine avec n = 0 (c'est un cas spécial)
+upViewport(0)
+# On utilise la fonction de la diapositive précédente
+viewport_paths()
+```
